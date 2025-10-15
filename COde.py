@@ -344,3 +344,87 @@ def login():
     </form>
     <a href="/register">Need an account? Register</a>
     '''
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("home"))
+
+# --- Home & Dashboard ---
+@app.route("/")
+def home():
+    if "username" in session:
+        return redirect(url_for("dashboard"))
+    
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>African Mining Data Portal</title>
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            .container { max-width: 600px; margin: 0 auto; }
+            .button { display: inline-block; padding: 15px 30px; margin: 10px; 
+                     background: #007bff; color: white; text-decoration: none; 
+                     border-radius: 5px; font-size: 18px; }
+            .button:hover { background: #0056b3; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>African Mining Data Portal</h1>
+            <p>Explore major mineral deposits and production sites across Africa</p>
+            <div>
+                <a href="/login" class="button">Login</a>
+                <a href="/register" class="button">Register</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    user = session["username"]
+    role = session["role"]
+    
+    # Generate mineral price chart for dashboard
+    minerals_df = load_df(MINERAL_FILE)
+    if not minerals_df.empty:
+        fig = px.bar(minerals_df, x='MineralName', y='MarketPriceUSD_per_tonne',
+                    title='Mineral Market Prices', color='MineralName',
+                    labels={'MarketPriceUSD_per_tonne': 'Price per tonne (USD)', 'MineralName': 'Mineral'})
+        price_chart = fig.to_html(full_html=False, include_plotlyjs='cdn')
+    else:
+        price_chart = "<p>No mineral data available</p>"
+    
+    # Generate African mineral map for dashboard
+    sites_df = load_df(DEPOSITS_FILE)
+    if not sites_df.empty:
+        africa_map = folium.Map(location=[-8, 28], zoom_start=4)
+        
+        for _, site in sites_df.iterrows():
+            mineral_name = get_mineral_name(site['MineralID'])
+            country_name = get_country_name(site['CountryID'])
+            color = get_mineral_color(mineral_name)
+            
+            popup_text = f"""
+            <div style='min-width: 250px;'>
+                <h4 style='margin: 0; color: #333;'>{site['SiteName']}</h4>
+                <hr style='margin: 5px 0;'>
+                <p style='margin: 2px 0;'><strong>Country:</strong> {country_name}</p>
+                <p style='margin: 2px 0;'><strong>Mineral:</strong> {mineral_name}</p>
+                <p style='margin: 2px 0;'><strong>Annual Production:</strong> {site['Production_tonnes']:,.0f} tonnes</p>
+            </div>
+            """
+            
+            folium.Marker(
+                [site['Latitude'], site['Longitude']],
+                popup=folium.Popup(popup_text, max_width=300),
+                tooltip=f"{site['SiteName']} - {mineral_name}",
+                icon=folium.Icon(color=color, icon='info-sign')
+            ).add_to(africa_map)
+        
+        map_html = africa_map._repr_html_()
+    else:
+        map_html = "<p>No mining site data available</p>"
