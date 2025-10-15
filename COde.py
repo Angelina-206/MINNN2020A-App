@@ -818,3 +818,235 @@ def manage_countries():
     """
     
     return countries_html
+
+# --- Mineral Management ---
+@app.route("/minerals")
+@login_required
+def list_minerals():
+    minerals_df = load_df(MINERAL_FILE)
+    
+    if minerals_df.empty:
+        return "<h2>Minerals</h2><p>No mineral data available</p><a href='/dashboard'>Back to Dashboard</a>"
+    
+    html = "<h1>Mineral Database</h1>"
+    
+    for _, mineral in minerals_df.iterrows():
+        html += f"""
+        <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: white;">
+            <h3 style="margin: 0 0 10px 0; color: #2c3e50;">{mineral['MineralName']}</h3>
+            <p style="margin: 5px 0; color: #666;">{mineral['Description']}</p>
+            <p style="margin: 5px 0;"><strong>Market Price:</strong> ${mineral['MarketPriceUSD_per_tonne']:,.2f} per tonne</p>
+        </div>
+        """
+    
+    html += "<div style='margin-top: 20px;'><a href='/dashboard' style='padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;'>Back to Dashboard</a></div>"
+    return html
+
+@app.route("/minerals/add", methods=["GET", "POST"])
+@login_required
+@admin_required
+def add_mineral():
+    if request.method == "POST":
+        mineral_name = request.form["name"].strip()
+        description = request.form["description"].strip()
+        price = float(request.form["price"])
+        
+        minerals_df = load_df(MINERAL_FILE)
+        next_id = minerals_df["MineralID"].max() + 1 if not minerals_df.empty else 1
+        
+        new_mineral = pd.DataFrame([{
+            "MineralID": next_id,
+            "MineralName": mineral_name,
+            "Description": description,
+            "MarketPriceUSD_per_tonne": price
+        }])
+        
+        pd.concat([minerals_df, new_mineral], ignore_index=True).to_csv(MINERAL_FILE, index=False)
+        return redirect("/minerals")
+    
+    return '''
+    <h2>Add New Mineral</h2>
+    <form method="post">
+        <div style="margin-bottom: 15px;">
+            <label>Mineral Name:</label><br>
+            <input type="text" name="name" required style="width: 300px; padding: 8px;">
+        </div>
+        <div style="margin-bottom: 15px;">
+            <label>Description:</label><br>
+            <textarea name="description" required style="width: 300px; height: 100px; padding: 8px;"></textarea>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <label>Market Price (USD per tonne):</label><br>
+            <input type="number" name="price" step="0.01" required style="width: 300px; padding: 8px;">
+        </div>
+        <button type="submit" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px;">Add Mineral</button>
+    </form>
+    <div style="margin-top: 20px;">
+        <a href="/minerals">Back to Minerals</a> | 
+        <a href="/admin">Back to Admin Panel</a>
+    </div>
+    '''
+
+# --- Charts Page ---
+@app.route("/charts")
+@login_required
+def charts_page():
+    trends_data = get_production_trends()
+    
+    charts_html = "<h2>Interactive Charts & Analytics</h2>"
+    
+    if trends_data is not None and not trends_data.empty:
+        # Chart 1: Production Trends Over Time
+        yearly_production = trends_data.groupby(['Year', 'MineralName'])['Production_tonnes'].sum().reset_index()
+        fig1 = px.line(yearly_production, x='Year', y='Production_tonnes', color='MineralName',
+                      title='Mineral Production Trends Over Time (2020-2023)',
+                      labels={'Production_tonnes': 'Production (tonnes)', 'Year': 'Year'})
+        charts_html += f"<h3>Production Trends</h3>{fig1.to_html(full_html=False, include_plotlyjs=True)}"
+        
+        # Chart 2: Export Values by Country
+        export_by_country = trends_data.groupby('CountryID')['ExportValue_BillionUSD'].sum().reset_index()
+        export_by_country['CountryName'] = export_by_country['CountryID'].apply(get_country_name)
+        fig2 = px.bar(export_by_country, x='CountryName', y='ExportValue_BillionUSD',
+                     title='Total Export Values by Country (2020-2023)',
+                     labels={'ExportValue_BillionUSD': 'Export Value (Billion USD)'})
+        charts_html += f"<h3>Export Values</h3>{fig2.to_html(full_html=False, include_plotlyjs=False)}"
+        
+        # Chart 3: Mineral Prices
+        minerals_df = load_df(MINERAL_FILE)
+        if not minerals_df.empty:
+            fig3 = px.bar(minerals_df, x='MineralName', y='MarketPriceUSD_per_tonne',
+                         title='Mineral Market Prices (USD per tonne)',
+                         color='MineralName',
+                         labels={'MarketPriceUSD_per_tonne': 'Price (USD/tonne)'})
+            charts_html += f"<h3>Mineral Prices</h3>{fig3.to_html(full_html=False, include_plotlyjs=False)}"
+    else:
+        charts_html += "<p>No production data available for charts. Please check if production_stats.csv is properly populated.</p>"
+    
+    charts_html += '''
+    <div style="margin-top: 30px;">
+        <a href="/dashboard" style="padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;">Back to Dashboard</a>
+    </div>
+    '''
+    
+    return charts_html
+
+# --- African Mineral Map Page ---
+@app.route("/map")
+@login_required
+def african_mineral_map():
+    sites_df = load_df(DEPOSITS_FILE)
+    minerals_df = load_df(MINERAL_FILE)
+    
+    if not sites_df.empty:
+        m = folium.Map(location=[-8, 28], zoom_start=4, tiles='OpenStreetMap')
+        
+        for _, site in sites_df.iterrows():
+            mineral_name = get_mineral_name(site['MineralID'])
+            country_name = get_country_name(site['CountryID'])
+            color = get_mineral_color(mineral_name)
+            
+            mineral_data = minerals_df[minerals_df['MineralID'] == site['MineralID']]
+            price = mineral_data['MarketPriceUSD_per_tonne'].iloc[0] if not mineral_data.empty else "N/A"
+            
+            popup_text = f"""
+            <div style='min-width: 280px;'>
+                <h4 style='color: #2c3e50; margin-bottom: 10px;'>{site['SiteName']}</h4>
+                <div style='border-left: 4px solid {color}; padding-left: 10px;'>
+                    <p style='margin: 5px 0;'><strong>Country:</strong> {country_name}</p>
+                    <p style='margin: 5px 0;'><strong>Mineral:</strong> {mineral_name}</p>
+                    <p style='margin: 5px 0;'><strong>Annual Production:</strong> {site['Production_tonnes']:,.0f} tonnes</p>
+                    <p style='margin: 5px 0;'><strong>Market Price:</strong> ${price:,.2f}/tonne</p>
+                    <p style='margin: 5px 0;'><strong>Coordinates:</strong> {site['Latitude']:.4f}, {site['Longitude']:.4f}</p>
+                </div>
+            </div>
+            """
+            
+            folium.Marker(
+                [site['Latitude'], site['Longitude']],
+                popup=folium.Popup(popup_text, max_width=350),
+                tooltip=f"{site['SiteName']} - {mineral_name}",
+                icon=folium.Icon(color=color, icon='info-sign')
+            ).add_to(m)
+        
+        map_html = m._repr_html_()
+        
+        page_content = f"""
+        <h1>African Mineral Deposits Map</h1>
+        <div style="background: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <p><strong>Explore Africa's Rich Mineral Resources</strong></p>
+            <p>This interactive map shows major mining operations across Africa, highlighting the continent's 
+            strategic importance in global mineral supply chains. Click on any marker for detailed information 
+            about production volumes, mineral types, and locations.</p>
+        </div>
+        <div style="width: 100%; height: 700px; border: 2px solid #bdc3c7; border-radius: 8px; overflow: hidden;">
+            {map_html}
+        </div>
+        """
+    else:
+        page_content = "<h2>African Mineral Map</h2><p>No mining site data available</p>"
+    
+    back_btn = "<div style='margin-top: 20px;'><a href='/dashboard' style='padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px;'>Back to Dashboard</a></div>"
+    return page_content + back_btn
+
+# --- Market Data (Investor Access) ---
+@app.route("/market")
+@login_required
+def market_data():
+    if session.get("role") not in ["Administrator", "Investor"]:
+        return "Access denied. Investor or Administrator role required.", 403
+    
+    minerals_df = load_df(MINERAL_FILE)
+    production_df = load_df(PROD_TS_FILE)
+    
+    market_html = "<h1>Market Data & Investment Analysis</h1>"
+    
+    if not minerals_df.empty:
+        # Mineral price table
+        market_html += "<h3>Current Mineral Prices</h3>"
+        market_html += """
+        <table border="1" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+            <thead style="background: #f8f9fa;">
+                <tr>
+                    <th style="padding: 10px;">Mineral</th>
+                    <th style="padding: 10px;">Description</th>
+                    <th style="padding: 10px;">Price (USD/tonne)</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        for _, mineral in minerals_df.iterrows():
+            market_html += f"""
+            <tr>
+                <td style="padding: 10px;"><strong>{mineral['MineralName']}</strong></td>
+                <td style="padding: 10px;">{mineral['Description']}</td>
+                <td style="padding: 10px;">${mineral['MarketPriceUSD_per_tonne']:,.2f}</td>
+            </tr>
+            """
+        
+        market_html += "</tbody></table>"
+    
+    # Investment insights
+    market_html += """
+    <div style="background: #e8f4f8; padding: 20px; border-radius: 8px;">
+        <h3>Investment Insights</h3>
+        <ul>
+            <li><strong>Cobalt & Copper:</strong> DR Congo dominates global supply - high growth potential but consider political risk</li>
+            <li><strong>Platinum:</strong> South Africa controls 75% of global reserves - stable long-term investment</li>
+            <li><strong>Diamonds:</strong> Botswana leads in value - established mining operations with good governance</li>
+            <li><strong>Iron Ore:</strong> Guinea's Simandou project represents one of the world's largest untapped reserves</li>
+            <li><strong>Phosphates:</strong> Morocco controls 75% of global reserves - essential for agriculture</li>
+        </ul>
+    </div>
+    """
+    
+    market_html += "<div style='margin-top: 30px;'><a href='/dashboard' style='padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;'>Back to Dashboard</a></div>"
+    return market_html
+
+if __name__ == "__main__":
+    print("Starting African Mining Data Portal...")
+    print("Access at: http://127.0.0.1:5000")
+    print("Initializing data...")
+    add_african_mineral_data()
+    print("Data initialization complete!")
+    app.run(debug=True, host="127.0.0.1", port=5000)
