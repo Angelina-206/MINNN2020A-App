@@ -667,3 +667,154 @@ def country_profile(country_id):
     back_btn = "<div style='margin-top: 30px;'><a href='/countries' style='padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px;'>Back to Countries</a></div>"
     return profile_content + back_btn
 
+# --- Admin Functions ---
+@app.route("/admin")
+@login_required
+@admin_required
+def admin_panel():
+    users_df = load_df(USER_FILE)
+    countries_df = load_df(COUNTRY_FILE)
+    minerals_df = load_df(MINERAL_FILE)
+    sites_df = load_df(DEPOSITS_FILE)
+    
+    admin_content = f"""
+    <h1>Administrator Panel</h1>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px;">
+        <div style="background: #e8f4f8; padding: 20px; border-radius: 8px;">
+            <h3>System Overview</h3>
+            <p><strong>Total Users:</strong> {len(users_df)}</p>
+            <p><strong>Countries:</strong> {len(countries_df)}</p>
+            <p><strong>Minerals:</strong> {len(minerals_df)}</p>
+            <p><strong>Mining Sites:</strong> {len(sites_df)}</p>
+        </div>
+        
+        <div style="background: #fff3cd; padding: 20px; border-radius: 8px;">
+            <h3>Quick Actions</h3>
+            <ul style="list-style: none; padding: 0;">
+                <li style="margin: 10px 0;"><a href="/admin/users" style="color: #856404; text-decoration: none; font-weight: bold;">Manage Users</a></li>
+                <li style="margin: 10px 0;"><a href="/minerals/add" style="color: #856404; text-decoration: none; font-weight: bold;">Add New Mineral</a></li>
+                <li style="margin: 10px 0;"><a href="/admin/countries" style="color: #856404; text-decoration: none; font-weight: bold;">Manage Countries</a></li>
+            </ul>
+        </div>
+    </div>
+    """
+    
+    back_btn = "<div style='margin-top: 20px;'><a href='/dashboard' style='padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;'>Back to Dashboard</a></div>"
+    return admin_content + back_btn
+
+@app.route("/admin/users")
+@login_required
+@admin_required
+def manage_users():
+    users_df = load_df(USER_FILE)
+    
+    users_html = "<h2>User Management</h2>"
+    
+    if not users_df.empty:
+        users_html += """
+        <table border="1" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead style="background: #f8f9fa;">
+                <tr>
+                    <th style="padding: 10px;">ID</th>
+                    <th style="padding: 10px;">Username</th>
+                    <th style="padding: 10px;">Email</th>
+                    <th style="padding: 10px;">Role</th>
+                    <th style="padding: 10px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        for _, user in users_df.iterrows():
+            role_name = get_role_name(user['RoleID'])
+            users_html += f"""
+            <tr>
+                <td style="padding: 10px;">{user['UserID']}</td>
+                <td style="padding: 10px;">{user['Username']}</td>
+                <td style="padding: 10px;">{user['Email']}</td>
+                <td style="padding: 10px;">{role_name}</td>
+                <td style="padding: 10px;">
+                    <a href="/admin/users/delete/{user['UserID']}" onclick="return confirm('Are you sure you want to delete this user?')" style="color: #dc3545; text-decoration: none;">Delete</a>
+                </td>
+            </tr>
+            """
+        
+        users_html += "</tbody></table>"
+    else:
+        users_html += "<p>No users found.</p>"
+    
+    users_html += """
+    <div style="margin-top: 20px;">
+        <a href="/admin" style="padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;">Back to Admin Panel</a>
+    </div>
+    """
+    
+    return users_html
+
+@app.route("/admin/users/delete/<int:user_id>")
+@login_required
+@admin_required
+def delete_user(user_id):
+    users_df = load_df(USER_FILE)
+    
+    if not users_df.empty:
+        # Don't allow deleting the current user
+        current_user = session.get("username")
+        user_to_delete = users_df[users_df['UserID'] == user_id]
+        
+        if not user_to_delete.empty and user_to_delete.iloc[0]['Username'] != current_user:
+            users_df = users_df[users_df['UserID'] != user_id]
+            users_df.to_csv(USER_FILE, index=False)
+    
+    return redirect("/admin/users")
+
+@app.route("/admin/countries")
+@login_required
+@admin_required
+def manage_countries():
+    countries_df = load_df(COUNTRY_FILE)
+    
+    countries_html = "<h2>Country Management</h2>"
+    
+    if not countries_df.empty:
+        countries_html += """
+        <table border="1" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead style="background: #f8f9fa;">
+                <tr>
+                    <th style="padding: 10px;">ID</th>
+                    <th style="padding: 10px;">Country Name</th>
+                    <th style="padding: 10px;">GDP (Billion USD)</th>
+                    <th style="padding: 10px;">Mining Revenue (Billion USD)</th>
+                    <th style="padding: 10px;">Population (Millions)</th>
+                    <th style="padding: 10px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        for _, country in countries_df.iterrows():
+            countries_html += f"""
+            <tr>
+                <td style="padding: 10px;">{country['CountryID']}</td>
+                <td style="padding: 10px;">{country['CountryName']}</td>
+                <td style="padding: 10px;">${country.get('GDP_BillionUSD', 0)}</td>
+                <td style="padding: 10px;">${country.get('MiningRevenue_BillionUSD', 0)}</td>
+                <td style="padding: 10px;">{country.get('Population_Millions', 0)}</td>
+                <td style="padding: 10px;">
+                    <a href="/country/{country['CountryID']}" style="color: #007bff; text-decoration: none;">View</a>
+                </td>
+            </tr>
+            """
+        
+        countries_html += "</tbody></table>"
+    else:
+        countries_html += "<p>No countries found.</p>"
+    
+    countries_html += """
+    <div style="margin-top: 20px;">
+        <a href="/admin" style="padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;">Back to Admin Panel</a>
+    </div>
+    """
+    
+    return countries_html
