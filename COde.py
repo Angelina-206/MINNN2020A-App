@@ -510,4 +510,160 @@ def dashboard():
     </body>
     </html>
     '''
+# --- Country Profiles ---
+@app.route("/countries")
+@login_required
+def list_countries():
+    countries_df = load_df(COUNTRY_FILE)
+    
+    if countries_df.empty:
+        return "<h2>Country Profiles</h2><p>No country data available</p><a href='/dashboard'>Back to Dashboard</a>"
+    
+    html = """
+    <h1>African Mining Country Profiles</h1>
+    <p style="color: #666; margin-bottom: 30px;">
+        Comprehensive overview of major mineral-producing countries in Africa with production statistics, 
+        economic data, and key mining projects.
+    </p>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px;">
+    """
+    
+    for _, country in countries_df.iterrows():
+        # Safe access to country data with fallbacks
+        country_name = country.get('CountryName', 'Unknown Country')
+        gdp = country.get('GDP_BillionUSD', 0)
+        mining_revenue = country.get('MiningRevenue_BillionUSD', 0)
+        population = country.get('Population_Millions', 0)
+        mining_contribution = country.get('MiningContribution_GDP', 0)
+        key_projects = country.get('KeyProjects', 'No information available')
+        
+        production_data = get_country_production_data(country['CountryID'])
+        total_minerals = len(production_data) if production_data else 0
+        
+        html += f"""
+        <div style="border: 1px solid #ddd; border-radius: 8px; padding: 20px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h3 style="margin-top: 0; color: #2c3e50;">{country_name}</h3>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                <div>
+                    <strong>GDP:</strong><br>
+                    <span style="color: #27ae60;">${gdp}B</span>
+                </div>
+                <div>
+                    <strong>Mining Revenue:</strong><br>
+                    <span style="color: #e74c3c;">${mining_revenue}B</span>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <strong>Mining Contribution to GDP:</strong> {mining_contribution}%<br>
+                <strong>Population:</strong> {population}M<br>
+                <strong>Key Minerals:</strong> {total_minerals} types
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+                <strong>Global Significance:</strong><br>
+                <small>{key_projects}</small>
+            </div>
+            
+            <a href="/country/{country['CountryID']}" style="display: block; text-align: center; background: #3498db; color: white; padding: 10px; text-decoration: none; border-radius: 4px;">
+                View Detailed Profile
+            </a>
+        </div>
+        """
+    
+    html += "</div>"
+    
+    back_btn = "<div style='margin-top: 30px;'><a href='/dashboard' style='padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;'>Back to Dashboard</a></div>"
+    return html + back_btn
+
+@app.route("/country/<int:country_id>")
+@login_required
+def country_profile(country_id):
+    countries_df = load_df(COUNTRY_FILE)
+    country = countries_df[countries_df['CountryID'] == country_id]
+    
+    if country.empty:
+        return "Country not found", 404
+    
+    country_data = country.iloc[0]
+    production_data = get_country_production_data(country_id)
+    
+    # Safe access to country data
+    country_name = country_data.get('CountryName', 'Unknown Country')
+    gdp = country_data.get('GDP_BillionUSD', 0)
+    mining_revenue = country_data.get('MiningRevenue_BillionUSD', 0)
+    population = country_data.get('Population_Millions', 0)
+    mining_contribution = country_data.get('MiningContribution_GDP', 0)
+    key_projects = country_data.get('KeyProjects', 'No information available')
+    
+    # Build production overview
+    production_html = "<h3>Mineral Production Overview</h3>"
+    if production_data:
+        production_html += "<div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;'>"
+        
+        for mineral, data in production_data.items():
+            production_html += f"""
+            <div style="border: 1px solid #e0e0e0; border-radius: 6px; padding: 15px; background: #fafafa;">
+                <h4 style="margin: 0 0 10px 0; color: #2c3e50;">{mineral}</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.9em;">
+                    <div>
+                        <strong>Annual Production:</strong><br>
+                        {data['production']:,.0f} tonnes
+                    </div>
+                    <div>
+                        <strong>Export Value:</strong><br>
+                        ${data.get('export_value', 0):,.2f}B
+                    </div>
+                </div>
+            </div>
+            """
+        production_html += "</div>"
+        
+        # Add major mining sites
+        production_html += "<h3 style='margin-top: 30px;'>Major Mining Operations</h3>"
+        production_html += "<div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 15px;'>"
+        
+        for mineral, data in production_data.items():
+            for site in data.get('sites', []):
+                production_html += f"""
+                <div style="border-left: 4px solid {get_mineral_color(mineral)}; padding: 12px; background: white; border-radius: 4px;">
+                    <strong>{site['name']}</strong><br>
+                    <span style="color: #666; font-size: 0.9em;">
+                        {mineral} - {site['production']:,.0f} tonnes/year
+                    </span>
+                </div>
+                """
+        production_html += "</div>"
+    else:
+        production_html += "<p>No production data available for this country.</p>"
+    
+    profile_content = f"""
+    <h1>{country_name} - Mining Profile</h1>
+    
+    <div style="background: #e8f4f8; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+        <h3 style="margin-top: 0;">Country Overview</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div>
+                <strong>Total GDP:</strong> ${gdp} Billion<br>
+                <strong>Mining Revenue:</strong> ${mining_revenue} Billion<br>
+                <strong>Mining Contribution:</strong> {mining_contribution}% of GDP
+            </div>
+            <div>
+                <strong>Population:</strong> {population} Million<br>
+                <strong>Key Minerals:</strong> {', '.join(production_data.keys()) if production_data else 'N/A'}
+            </div>
+        </div>
+        <div style="margin-top: 15px;">
+            <strong>Key Projects & Significance:</strong><br>
+            {key_projects}
+        </div>
+    </div>
+    
+    {production_html}
+    """
+    
+    back_btn = "<div style='margin-top: 30px;'><a href='/countries' style='padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px;'>Back to Countries</a></div>"
+    return profile_content + back_btn
 
