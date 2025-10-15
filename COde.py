@@ -151,3 +151,196 @@ def load_df(filename):
             print(f"Error loading {filename}: {e}")
             return pd.DataFrame()
     return pd.DataFrame()
+
+def load_users():
+    users = {}
+    df = load_df(USER_FILE)
+    for _, row in df.iterrows():
+        users[row['Username']] = {
+            "password_hash": row['PasswordHash'],
+            "role": int(row['RoleID']),
+            "email": row['Email'],
+            "id": row['UserID']
+        }
+    return users
+
+def get_role_name(role_id):
+    roles = load_df(ROLES_FILE)
+    if not roles.empty:
+        match = roles[roles["RoleID"] == role_id]
+        if not match.empty:
+            return match.iloc[0]["RoleName"]
+    return "Researcher"
+
+def get_country_name(country_id):
+    countries = load_df(COUNTRY_FILE)
+    if not countries.empty:
+        match = countries[countries["CountryID"] == country_id]
+        if not match.empty:
+            return match.iloc[0]["CountryName"]
+    return f"Country_{country_id}"
+
+def get_mineral_name(mineral_id):
+    minerals = load_df(MINERAL_FILE)
+    if not minerals.empty:
+        match = minerals[minerals["MineralID"] == mineral_id]
+        if not match.empty:
+            return match.iloc[0]["MineralName"]
+    return f"Mineral_{mineral_id}"
+
+def get_mineral_color(mineral_name):
+    color_map = {
+        "Copper": "orange",
+        "Gold": "gold",
+        "Iron Ore": "darkred",
+        "Diamonds": "lightblue",
+        "Cobalt": "blue",
+        "Platinum": "lightgray",
+        "Phosphates": "green",
+        "Bauxite": "red"
+    }
+    return color_map.get(mineral_name, "purple")
+
+def get_country_production_data(country_id):
+    """Get comprehensive production data for a country"""
+    production_df = load_df(PROD_TS_FILE)
+    sites_df = load_df(DEPOSITS_FILE)
+    
+    country_production = production_df[production_df['CountryID'] == country_id]
+    country_sites = sites_df[sites_df['CountryID'] == country_id]
+    
+    mineral_production = {}
+    
+    if not country_production.empty:
+        # Get latest year data
+        latest_year = country_production['Year'].max()
+        latest_data = country_production[country_production['Year'] == latest_year]
+        
+        for _, row in latest_data.iterrows():
+            mineral_name = get_mineral_name(row['MineralID'])
+            if mineral_name not in mineral_production:
+                mineral_production[mineral_name] = {
+                    'production': 0,
+                    'export_value': 0,
+                    'sites': []
+                }
+            mineral_production[mineral_name]['production'] += row['Production_tonnes']
+            mineral_production[mineral_name]['export_value'] += row['ExportValue_BillionUSD']
+    
+    # Add site information
+    for _, site in country_sites.iterrows():
+        mineral_name = get_mineral_name(site['MineralID'])
+        if mineral_name not in mineral_production:
+            mineral_production[mineral_name] = {
+                'production': site['Production_tonnes'],
+                'export_value': 0,
+                'sites': []
+            }
+        mineral_production[mineral_name]['sites'].append({
+            'name': site['SiteName'],
+            'production': site['Production_tonnes'],
+            'mineral': mineral_name
+        })
+    
+    return mineral_production
+
+def get_production_trends():
+    """Get production trends for charts"""
+    production_df = load_df(PROD_TS_FILE)
+    minerals_df = load_df(MINERAL_FILE)
+    
+    if production_df.empty:
+        return None
+    
+    # Merge with mineral names
+    merged_df = production_df.merge(minerals_df[['MineralID', 'MineralName']], on='MineralID')
+    return merged_df
+
+# --- Decorators ---
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if "username" not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return wrapper
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if session.get("role") != "Administrator":
+            return "Access denied. Administrator role required.", 403
+        return f(*args, **kwargs)
+    return wrapper
+
+# --- Authentication Routes ---
+@app.route("/register", methods=["GET","POST"])
+def register():
+    if "username" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        username = request.form["username"].strip()
+        password = request.form["password"].strip()
+        email = request.form["email"].strip()
+        role_id = int(request.form.get("role", "3"))
+        
+        users = load_users()
+        if username in users:
+            return "Username already exists", 400
+        
+        pwd_hash = generate_password_hash(password)
+        df = load_df(USER_FILE)
+        next_id = df["UserID"].max() + 1 if not df.empty else 1
+        new_user = pd.DataFrame([{
+            "UserID": next_id,
+            "Username": username,
+            "PasswordHash": pwd_hash,
+            "RoleID": role_id,
+            "Email": email
+        }])
+        pd.concat([df, new_user], ignore_index=True).to_csv(USER_FILE, index=False)
+        return redirect(url_for("login"))
+
+    return '''
+    <h2>Register</h2>
+    <form method="post">
+      Username: <input name="username" required><br>
+      Password: <input name="password" type="password" required><br>
+      Email: <input name="email" type="email"><br>
+      Role:<br>
+      <input type="radio" name="role" value="1"> Administrator<br>
+      <input type="radio" name="role" value="2"> Investor<br>
+      <input type="radio" name="role" value="3" checked> Researcher<br>
+      <button type="submit">Register</button>
+    </form>
+    <a href="/login">Already have an account? Login</a>
+    '''
+
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if "username" in session:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        username = request.form["username"].strip()
+        password = request.form["password"].strip()
+        users = load_users()
+        
+        if username in users and check_password_hash(users[username]["password_hash"], password):
+            user_data = users[username]
+            session["username"] = username
+            session["role"] = get_role_name(user_data["role"])
+            return redirect(url_for("dashboard"))
+        
+        return "Invalid credentials", 401
+
+    return '''
+    <h2>Login</h2>
+    <form method="post">
+      Username: <input name="username" required><br>
+      Password: <input name="password" type="password" required><br>
+      <button type="submit">Login</button>
+    </form>
+    <a href="/register">Need an account? Register</a>
+    '''
