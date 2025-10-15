@@ -142,7 +142,7 @@ def add_african_mineral_data():
 # Initialize data
 add_african_mineral_data()
 
-# --- Helper Functions ---
+# Helper Functions 
 def load_df(filename):
     if os.path.exists(filename) and os.path.getsize(filename) > 0:
         try:
@@ -273,7 +273,7 @@ def admin_required(f):
         return f(*args, **kwargs)
     return wrapper
 
-# --- Authentication Routes ---
+#  Authentication Routes 
 @app.route("/register", methods=["GET","POST"])
 def register():
     if "username" in session:
@@ -349,7 +349,7 @@ def logout():
     session.clear()
     return redirect(url_for("home"))
 
-# --- Home & Dashboard ---
+# Home & Dashboard 
 @app.route("/")
 def home():
     if "username" in session:
@@ -428,3 +428,86 @@ def dashboard():
         map_html = africa_map._repr_html_()
     else:
         map_html = "<p>No mining site data available</p>"
+
+
+# Dashboard links
+    links = [
+        ("View Minerals", "/minerals"),
+        ("African Mineral Map", "/map"),
+        ("Country Profiles", "/countries"),
+        ("Production Charts", "/charts")
+    ]
+    
+    if role == "Administrator":
+        links.extend([
+            ("Admin Panel", "/admin"),
+            ("Add Mineral", "/minerals/add")
+        ])
+    
+    if role in ["Investor", "Administrator"]:
+        links.append(("Market Data", "/market"))
+    
+    links_html = "".join(f'<li><a href="{url}">{text}</a></li>' for text, url in links)
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>African Mining Dashboard</title>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            body {{ font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
+            .dashboard-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }}
+            .chart-container, .map-container {{ background: white; padding: 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+            .links {{ list-style: none; padding: 0; }}
+            .links li {{ margin: 10px 0; }}
+            .links a {{ display: block; padding: 15px; background: #28a745; color: white; 
+                      text-decoration: none; border-radius: 5px; }}
+            .links a:hover {{ background: #218838; }}
+            .logout {{ margin-top: 30px; }}
+            .logout a {{ background: #dc3545; padding: 10px 20px; color: white; 
+                       text-decoration: none; border-radius: 5px; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>African Mining Dashboard</h1>
+            <p>Welcome, <strong>{user}</strong> | Role: <strong>{role}</strong></p>
+        </div>
+        
+        <div class="dashboard-grid">
+            <div class="chart-container">
+                <h3>Mineral Market Prices</h3>
+                <div id="price-chart">{price_chart}</div>
+            </div>
+            
+            <div class="map-container">
+                <h3>African Mineral Deposits</h3>
+                <div id="africa-map" style="height: 400px;">{map_html}</div>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <h3>Quick Access</h3>
+                <ul class="links">{links_html}</ul>
+            </div>
+            <div>
+                <h3>African Mining Overview</h3>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
+                    <p><strong>14 Major Mining Sites</strong> across 8 African countries</p>
+                    <p><strong>8 Mineral Types</strong> including strategic resources</p>
+                    <p><strong>Real Production Data</strong> from actual mining operations</p>
+                    <p><strong>Interactive Map</strong> with detailed site information</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="logout">
+            <a href="/logout">Logout</a>
+        </div>
+    </body>
+    </html>
+    '''
+
