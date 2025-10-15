@@ -1,0 +1,4 @@
+RoleID,RoleName,Permissions
+1,Administrator,all
+2,Investor,"market_data,charts"
+3,Researcher,"view_data,charts"
