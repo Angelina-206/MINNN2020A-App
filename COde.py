@@ -284,11 +284,11 @@ def register():
         password = request.form["password"].strip()
         email = request.form["email"].strip()
         role_id = int(request.form.get("role", "3"))
-        
+
         users = load_users()
         if username in users:
-            return "Username already exists", 400
-        
+            return render_template_string(ERROR_TEMPLATE, message="Username already exists. Please try another one.")
+
         pwd_hash = generate_password_hash(password)
         df = load_df(USER_FILE)
         next_id = df["UserID"].max() + 1 if not df.empty else 1
@@ -303,46 +303,120 @@ def register():
         return redirect(url_for("login"))
 
     return '''
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Register</title>
+  <style>
+    body{font-family:sans-serif;background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+    .box{background:#f9f9f9;padding:35px;border-radius:15px;box-shadow:0 4px 10px rgba(0,0,0,.1);text-align:center;width:340px}
+    input,select,button{width:90%;margin:8px 0;padding:10px;border:1px solid #ccc;border-radius:8px}
+    button{background:#28a745;color:#fff;border:none;cursor:pointer}
+    button:hover{background:#1e7e34}
+    a{display:block;margin-top:10px;color:#007bff;text-decoration:none}
+  </style>
+</head>
+<body>
+  <div class="box">
     <h2>Register</h2>
     <form method="post">
-      Username: <input name="username" required><br>
-      Password: <input name="password" type="password" required><br>
-      Email: <input name="email" type="email"><br>
-      Role:<br>
-      <input type="radio" name="role" value="1"> Administrator<br>
-      <input type="radio" name="role" value="2"> Investor<br>
-      <input type="radio" name="role" value="3" checked> Researcher<br>
-      <button type="submit">Register</button>
+      <input name="username" placeholder="Username" required><br>
+      <input name="password" type="password" placeholder="Password" required><br>
+      <input name="email" type="email" placeholder="Email"><br>
+      <select name="role" required>
+        <option value="">Select Role</option>
+        <option value="2">Investor</option>
+        <option value="3">Researcher</option>
+      </select><br>
+      <button>Register</button>
     </form>
-    <a href="/login">Already have an account? Login</a>
+    <a href="/login">Already have an account?</a>
+  </div>
+</body>
+</html>
     '''
 
-@app.route("/login", methods=["GET","POST"])
-def login():
-    if "username" in session:
+@app.route("/admin-login", methods=["GET","POST"])
+def admin_login():
+    if "username" in session and session.get("role") == "Administrator":
         return redirect(url_for("dashboard"))
 
     if request.method == "POST":
         username = request.form["username"].strip()
-        password = request.form["password"].strip()
-        users = load_users()
-        
-        if username in users and check_password_hash(users[username]["password_hash"], password):
-            user_data = users[username]
+        secret_code = request.form["secret_code"].strip()
+
+        if secret_code == ADMIN_SECRET_CODE:
+            # Check if admin user exists, if not create one
+            users = load_users()
+            if username not in users:
+                pwd_hash = generate_password_hash(secret_code)  # Using secret code as password
+                df = load_df(USER_FILE)
+                next_id = df["UserID"].max() + 1 if not df.empty else 1
+                new_admin = pd.DataFrame([{
+                    "UserID": next_id,
+                    "Username": username,
+                    "PasswordHash": pwd_hash,
+                    "RoleID": 1,  # Administrator role
+                    "Email": f"{username}@admin.com"
+                }])
+                pd.concat([df, new_admin], ignore_index=True).to_csv(USER_FILE, index=False)
+
+            # Log the admin in
             session["username"] = username
-            session["role"] = get_role_name(user_data["role"])
+            session["role"] = "Administrator"
             return redirect(url_for("dashboard"))
-        
-        return "Invalid credentials", 401
+        else:
+            return '''
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Admin Login Error</title>
+              <style>
+                body{font-family:sans-serif;background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+                .box{background:#fff5f5;padding:30px;border-radius:15px;box-shadow:0 4px 10px rgba(0,0,0,.1);text-align:center;width:320px}
+                h2{color:#c82333;margin:0 0 10px}
+                a{display:inline-block;margin-top:10px;padding:8px 18px;background:#007bff;color:#fff;text-decoration:none;border-radius:8px}
+                a:hover{background:#0056b3}
+              </style>
+            </head>
+            <body>
+              <div class="box">
+                <h2>Invalid Secret Code</h2>
+                <p>Please check your secret code and try again.</p>
+                <a href="/admin-login">Back to Admin Login</a>
+                <a href="/login">Regular Login</a>
+              </div>
+            </body>
+            </html>
+            ''', 401
 
     return '''
-    <h2>Login</h2>
-    <form method="post">
-      Username: <input name="username" required><br>
-      Password: <input name="password" type="password" required><br>
-      <button type="submit">Login</button>
-    </form>
-    <a href="/register">Need an account? Register</a>
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Admin Login</title>
+      <style>
+        body{font-family:sans-serif;background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+        .box{background:#f9f9f9;padding:30px 40px;border-radius:15px;box-shadow:0 4px 10px rgba(0,0,0,.1);text-align:center;width:320px}
+        input,button{width:90%;margin:8px 0;padding:10px;border:1px solid #ccc;border-radius:8px}
+        button{background:#dc3545;color:#fff;border:none;cursor:pointer}
+        button:hover{background:#c82333}
+        a{display:block;margin-top:10px;color:#007bff;text-decoration:none}
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h2>Admin Login</h2>
+        <form method="post">
+          <input name="username" placeholder="Admin Username" required><br>
+          <input name="secret_code" type="password" placeholder="Secret Code" required><br>
+          <button>Login as Admin</button>
+        </form>
+        <a href="/login">Regular User Login</a>
+      </div>
+    </body>
+    </html>
     '''
 @app.route("/logout")
 def logout():
@@ -1050,4 +1124,5 @@ if __name__ == "__main__":
     add_african_mineral_data()
     print("Data initialization complete!")
     app.run(debug=True, host="127.0.0.1", port=5000)
+
 
