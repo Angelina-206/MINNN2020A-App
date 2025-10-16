@@ -11,6 +11,8 @@ app = Flask(__name__)
 app.secret_key = "Group7"
 app.permanent_session_lifetime = timedelta(hours=2)
 
+# Admin secret code
+ADMIN_SECRET_CODE = "Group7"
 
 #File Paths
 USER_FILE = "users.csv"
@@ -1124,5 +1126,6 @@ if __name__ == "__main__":
     add_african_mineral_data()
     print("Data initialization complete!")
     app.run(debug=True, host="127.0.0.1", port=5000)
+
 
 
