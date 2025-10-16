@@ -12,7 +12,7 @@ app.secret_key = "Group7"
 app.permanent_session_lifetime = timedelta(hours=2)
 
 
-# --- File Paths ---
+#File Paths
 USER_FILE = "users.csv"
 MINERAL_FILE = "minerals.csv"
 DEPOSITS_FILE = "sites.csv"
@@ -20,7 +20,7 @@ COUNTRY_FILE = "countries.csv"
 PROD_TS_FILE = "production_stats.csv"
 ROLES_FILE = "roles.csv"
 
-# --- Ensure CSVs Exist ---
+#Ensure CSVs Exist
 def ensure_csv(filename, header, default_rows=None):
     if not os.path.exists(filename):
         with open(filename, "w", newline="", encoding="utf-8") as f:
@@ -86,7 +86,7 @@ def add_african_mineral_data():
         sites_df = pd.DataFrame(african_mines, columns=["SiteID", "SiteName", "CountryID", "MineralID", "Latitude", "Longitude", "Production_tonnes"])
         sites_df.to_csv(DEPOSITS_FILE, index=False)
 
-    # Comprehensive African countries data - FIXED: Added MiningContribution_GDP column
+    # Comprehensive African countries data: Added MiningContribution_GDP column
     countries_df = pd.read_csv(COUNTRY_FILE) if os.path.exists(COUNTRY_FILE) else pd.DataFrame()
     if countries_df.empty:
         african_countries = [
@@ -256,7 +256,7 @@ def get_production_trends():
     merged_df = production_df.merge(minerals_df[['MineralID', 'MineralName']], on='MineralID')
     return merged_df
 
-# --- Decorators ---
+#Decorators
 def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -510,7 +510,7 @@ def dashboard():
     </body>
     </html>
     '''
-# --- Country Profiles ---
+#Country Profiles 
 @app.route("/countries")
 @login_required
 def list_countries():
@@ -667,7 +667,7 @@ def country_profile(country_id):
     back_btn = "<div style='margin-top: 30px;'><a href='/countries' style='padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px;'>Back to Countries</a></div>"
     return profile_content + back_btn
 
-# --- Admin Functions ---
+#Admin Functions
 @app.route("/admin")
 @login_required
 @admin_required
@@ -819,7 +819,7 @@ def manage_countries():
     
     return countries_html
 
-# --- Mineral Management ---
+#Mineral Management
 @app.route("/minerals")
 @login_required
 def list_minerals():
@@ -887,7 +887,7 @@ def add_mineral():
     </div>
     '''
 
-# --- Charts Page ---
+# Charts Page
 @app.route("/charts")
 @login_required
 def charts_page():
@@ -930,7 +930,7 @@ def charts_page():
     
     return charts_html
 
-# --- African Mineral Map Page ---
+# African Mineral Map Page
 @app.route("/map")
 @login_required
 def african_mineral_map():
@@ -988,7 +988,7 @@ def african_mineral_map():
     back_btn = "<div style='margin-top: 20px;'><a href='/dashboard' style='padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px;'>Back to Dashboard</a></div>"
     return page_content + back_btn
 
-# --- Market Data (Investor Access) ---
+# Market Data (Investor Access)    
 @app.route("/market")
 @login_required
 def market_data():
@@ -1050,3 +1050,4 @@ if __name__ == "__main__":
     add_african_mineral_data()
     print("Data initialization complete!")
     app.run(debug=True, host="127.0.0.1", port=5000)
+
